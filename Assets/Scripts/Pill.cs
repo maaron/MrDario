@@ -6,6 +6,8 @@ using UnityEngine;
 public class Pill : MonoBehaviour
 {
     [SerializeField] PerHalf<VirusType> pillType;
+    [SerializeField] PillRotation pillRotation;
+    [SerializeField] PerHalf<HalfPill> halves;
 
     public PerHalf<VirusType> PillType
     {
@@ -17,27 +19,30 @@ public class Pill : MonoBehaviour
         }
     }
 
-    [SerializeField] PerHalf<HalfPill> halves;
+    public PillRotation PillRotation
+    {
+        get => pillRotation;
+        set
+        {
+            pillRotation = value;
+            UpdateRotation();
+        }
+    }
 
     private void OnValidate()
     {
         UpdateHalves();
-    }
-
-    // Start is called before the first frame update
-    void Start()
-    {
-        
-    }
-
-    // Update is called once per frame
-    void Update()
-    {
+        UpdateRotation();
     }
 
     void UpdateHalves()
     {
         halves.Left.VirusType = pillType.Left;
         halves.Right.VirusType = pillType.Right;
+    }
+
+    void UpdateRotation()
+    {
+        transform.rotation = pillRotation.ToQuaternion();
     }
 }

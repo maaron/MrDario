@@ -40,4 +40,18 @@ public struct PerVirusType<T>
             }
         }
     }
+
+    public IEnumerable<T> ToEnumerable()
+    {
+        yield return Red;
+        yield return Blue;
+        yield return Yellow;
+    }
+
+    public void Visit(Action<VirusType, T> visitor)
+    {
+        visitor(VirusType.Red, Red);
+        visitor(VirusType.Blue, Blue);
+        visitor(VirusType.Yellow, Yellow);
+    }
 }
