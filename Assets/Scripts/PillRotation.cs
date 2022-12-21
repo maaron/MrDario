@@ -13,4 +13,7 @@ public static class PillRotationExtensions
     {
         return Quaternion.AngleAxis((int)pr * 90, Vector3.back);
     }
+
+    public static PillRotation Cw(this PillRotation pr) => (PillRotation)(((int)pr + 1) % 4);
+    public static PillRotation Ccw(this PillRotation pr) => (PillRotation)(((int)pr + 3) % 4);
 }

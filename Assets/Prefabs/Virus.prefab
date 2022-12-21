@@ -47,7 +47,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 72b62087e85aa2942b03c08934bddadf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  virusType: 2
+  virusType: 0
   viruses:
     Red: {fileID: 127156861312462672}
     Blue: {fileID: 8068726684984494540}
@@ -136,7 +136,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6044663631639684230, guid: e4f9bbf3a25065649b7b41f6c083e83c, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6145375365371713893, guid: e4f9bbf3a25065649b7b41f6c083e83c, type: 3}
       propertyPath: m_RootOrder
@@ -251,7 +251,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2023442683222437906, guid: 1268b0d78ed5e73439c0eb6822b21ade, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 1268b0d78ed5e73439c0eb6822b21ade, type: 3}

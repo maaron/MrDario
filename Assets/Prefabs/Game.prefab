@@ -48,6 +48,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   virusPrefab: {fileID: 7523768201326228263, guid: 77a5d9a6b7b7ceb4abdf68cfc80902a9, type: 3}
   virusParent: {fileID: 2965646820169301259}
+  pillPrefab: {fileID: 1973153065856861563, guid: 3575303a1490c6b4383013a4b8033f95, type: 3}
+  SlowDropInterval: 1
+  FastDropInterval: 0.1
 --- !u!1 &2965646820169301259
 GameObject:
   m_ObjectHideFlags: 0
