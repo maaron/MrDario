@@ -7,6 +7,9 @@ public class Virus : MonoBehaviour
 {
     [SerializeField] VirusType virusType;
     [SerializeField] PerVirusType<GameObject> viruses;
+    [SerializeField] LineRenderer deadRenderer;
+    [SerializeField] PerVirusType<Material> Materials;
+    [SerializeField] bool isDead;
 
     public VirusType VirusType
     {
@@ -18,6 +21,16 @@ public class Virus : MonoBehaviour
         }
     }
 
+    public bool IsDead
+    {
+        get => isDead;
+        set
+        {
+            isDead = value;
+            UpdateVirusType();
+        }
+    }
+
     private void OnValidate()
     {
         UpdateVirusType();
@@ -25,6 +38,8 @@ public class Virus : MonoBehaviour
 
     void UpdateVirusType()
     {
-        viruses.Visit((t, v) => v.gameObject.SetActive(t == virusType));
+        viruses.Visit((t, v) => v.gameObject.SetActive(t == virusType && isDead == false));
+        deadRenderer.gameObject.SetActive(isDead);
+        deadRenderer.material = Materials[virusType];
     }
 }

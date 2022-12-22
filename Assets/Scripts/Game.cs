@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Unity.Mathematics;
@@ -23,16 +24,18 @@ public class Game : MonoBehaviour
     [SerializeField] Virus virusPrefab;
     [SerializeField] GameObject virusParent;
     [SerializeField] Pill pillPrefab;
+    [SerializeField] BrokenPill brokenPillPrefab;
     [SerializeField] float SlowDropInterval = 1.0f;
     [SerializeField] float FastDropInterval = 0.1f;
+    [SerializeField] GameObject loseGameObject, winGameObject;
 
     CancellationTokenSource cts;
 
     async void Start()
     {
-        Generate();
         cts = new CancellationTokenSource();
-        await RunGame(cts.Token);
+
+        await RunGameForever(cts.Token);
     }
 
     private void OnDestroy()
@@ -40,8 +43,21 @@ public class Game : MonoBehaviour
         cts?.Cancel();
     }
 
+    async Task RunGameForever(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            await RunGame(ct);
+        }
+    }
+
     async Task RunGame(CancellationToken ct)
     {
+        Generate();
+        
+        loseGameObject.SetActive(false);
+        winGameObject.SetActive(false);
+
         while (!ct.IsCancellationRequested)
         {
             var location = await ThrowPill(ct);
@@ -49,14 +65,33 @@ public class Game : MonoBehaviour
             if (!location.HasValue)
             {
                 await Lose(ct);
-                break;
+                return;
             }
 
             await PlacePill(location.Value, ct);
 
-            while (await DestroyMatches(ct))
+            while (!ct.IsCancellationRequested)
             {
-                await DropBrokenPills(ct);
+                var matches = FindMatches();
+
+                if (matches.Count > 0)
+                {
+                    await KillMatches(matches, ct);
+
+                    if (!AnyVirusesAlive())
+                    {
+                        await Win(ct);
+                        return;
+                    }
+
+                    await DestroyMatches(matches, ct);
+             
+                    await DropUnsupportedPills(ct);
+                }
+                else
+                {
+                    break;
+                }
             }
         }
     }
@@ -65,11 +100,17 @@ public class Game : MonoBehaviour
     {
         int count = 0;
 
-        foreach (var v in viruses) GameObject.Destroy(v);
+        foreach (var cell in board.ToEnumerable())
+        {
+            if (cell.HasValue)
+                GameObject.Destroy(cell.Value.GameObject);
+        }
 
         board.GenerateRowMajor((i, j) =>
         {
             if (j > board.Height / 2) return null;
+
+            if (count > 5) return null;
 
             var choices = (VirusType[])Enum.GetValues(typeof(VirusType));
 
@@ -139,7 +180,8 @@ public class Game : MonoBehaviour
 
         // Generate a new pill
         var pill = GameObject.Instantiate<Pill>(pillPrefab, BoardPosition(location.min), Quaternion.identity, transform);
-        pill.PillType = Generator.VirusType.PerHalf()(r);
+        pill.Left.VirusType = Generator.VirusType(r);
+        pill.Right.VirusType = Generator.VirusType(r);
 
         // TODO: Animate the throwing of the pill
         await Task.Yield();
@@ -153,8 +195,16 @@ public class Game : MonoBehaviour
 
     async Task Lose(CancellationToken ct)
     {
-        // TODO: Run the happy virus animation until the user presses a button to continue.
-        await Task.Yield();
+        loseGameObject.SetActive(true);
+
+        await Task.Delay(TimeSpan.FromSeconds(2), ct);
+    }
+
+    async Task Win(CancellationToken ct)
+    {
+        winGameObject.SetActive(true);
+
+        await Task.Delay(TimeSpan.FromSeconds(2), ct);
     }
 
     async Task PlacePill(RectInt rect, CancellationToken ct)
@@ -204,23 +254,244 @@ public class Game : MonoBehaviour
         }
     }
 
-    async Task<bool> DestroyMatches(CancellationToken ct)
+    async Task KillMatches(List<RectInt> matches, CancellationToken ct)
     {
-        // TODO - Look for horizontal and vertical sequences or 4 or more like colored pieces
-        // (either viruses, pill halves, or broken pills).  Change the visual of such pieces to
-        // indicate destruction, wait for a short time, and then destroy associated viruses and
-        // broken pills.  Whole pills that are now broken must be destroyed and replaced with
-        // broken pills for the remaining half, if applicable.
+        // Show all pieces as destroyed for a little while
+        foreach (var match in matches)
+        {
+            foreach (var pos in match.allPositionsWithin)
+            {
+                var cell = board[pos];
+
+                cell.Value.Kill();
+            }
+        }
+
         await Task.Yield();
-        return false;
     }
 
-    async Task DropBrokenPills(CancellationToken ct)
+    async Task DestroyMatches(List<RectInt> matches, CancellationToken ct)
     {
-        // TODO - Allow broken pills unsupported by viruses or the bottom of the bottle to fall
-        // until everything is supported.
+        await Task.Delay(TimeSpan.FromSeconds(SlowDropInterval), ct);
 
-        await Task.Yield();
+        // Remove the destroyed pieces, breaking pills as necessary.
+        foreach (var match in matches)
+        {
+            foreach (var pos in match.allPositionsWithin)
+            {
+                var cell = board[pos];
+
+                if (cell.HasValue)
+                {
+                    switch (cell.Value.Kind)
+                    {
+                        case PieceKind.Virus: GameObject.Destroy(cell.Value.GameObject); 
+                            break;
+                        
+                        case PieceKind.PillFirst:
+                            {
+                                var pill = cell.Value.Pill;
+                                var otherLoc = FirstToSecond(pos, pill.PillRotation);
+                                if (board[otherLoc].HasValue)
+                                {
+                                    var brokenPill = GameObject.Instantiate<BrokenPill>(
+                                        brokenPillPrefab,
+                                        BoardPosition(otherLoc),
+                                        Quaternion.identity,
+                                        transform);
+
+                                    brokenPill.VirusType = pill.Right.VirusType;
+
+                                    board[otherLoc] = new GamePiece(PieceKind.BrokenPill, brokenPill.gameObject);
+                                }
+                                GameObject.Destroy(cell.Value.GameObject);
+                                break;
+                            }
+
+                        case PieceKind.PillSecond:
+                            {
+                                var pill = cell.Value.Pill;
+                                var otherLoc = SecondToFirst(pos, pill.PillRotation);
+                                if (board[otherLoc].HasValue)
+                                {
+                                    var brokenPill = GameObject.Instantiate<BrokenPill>(
+                                        brokenPillPrefab,
+                                        BoardPosition(otherLoc),
+                                        Quaternion.identity,
+                                        transform);
+
+                                    brokenPill.VirusType = pill.Left.VirusType;
+
+                                    board[otherLoc] = new GamePiece(PieceKind.BrokenPill, brokenPill.gameObject);
+                                }
+                                GameObject.Destroy(cell.Value.GameObject);
+                                break;
+                            }
+
+                        case PieceKind.BrokenPill: GameObject.Destroy(cell.Value.GameObject); 
+                            break;
+                        
+                        default: throw new System.Exception($"Invalid kind {cell.Value.Kind}");
+                    }
+
+                    board[pos] = null;
+                }
+            }
+        }
+    }
+
+    Vector2Int FirstToSecond(Vector2Int firstHalfLocation, PillRotation rotation)
+    {
+        switch (rotation)
+        {
+            case PillRotation.Zero: return firstHalfLocation + Vector2Int.right;
+            case PillRotation.Quarter: return firstHalfLocation + Vector2Int.down;
+            case PillRotation.Half: return firstHalfLocation + Vector2Int.left;
+            case PillRotation.ThreeQuarter: return firstHalfLocation + Vector2Int.up;
+            default: throw new Exception($"Invalid rotation {rotation}");
+        }
+    }
+
+    Vector2Int SecondToFirst(Vector2Int secondHalfLocation, PillRotation rotation)
+    {
+        switch (rotation)
+        {
+            case PillRotation.Zero: return secondHalfLocation + Vector2Int.left;
+            case PillRotation.Quarter: return secondHalfLocation + Vector2Int.up;
+            case PillRotation.Half: return secondHalfLocation + Vector2Int.right;
+            case PillRotation.ThreeQuarter: return secondHalfLocation + Vector2Int.down;
+            default: throw new Exception($"Invalid rotation {rotation}");
+        }
+    }
+
+    List<RectInt> FindMatches()
+    {
+        var vertical = FindVerticalMatches();
+        var horizontal = FindHorizontalMatches();
+        vertical.AddRange(horizontal);
+
+        return vertical;
+    }
+
+    List<RectInt> FindVerticalMatches()
+    {
+        var matches = new List<RectInt>();
+
+        for (int x = 0; x < board.Width; x++)
+        {
+            int count = 0;
+            VirusType? lastVirusType = null;
+
+            for (int y = 0; y < board.Height; y++)
+            {
+                var cell = board[x, y];
+                var virusType = cell?.VirusType;
+
+                if (cell.HasValue && virusType == lastVirusType)
+                {
+                    count++;
+                }
+                else
+                {
+                    if (count >= 4)
+                        matches.Add(new RectInt(x, y - count, 1, count));
+
+                    count = virusType.HasValue ? 1 : 0;
+
+                    lastVirusType = virusType;
+                }
+            }
+
+            if (count >= 4)
+                matches.Add(new RectInt(x, board.Height - count, 1, count));
+        }
+
+        return matches;
+    }
+
+    List<RectInt> FindHorizontalMatches()
+    {
+        var matches = new List<RectInt>();
+
+        for (int y = 0; y < board.Height; y++)
+        {
+            int count = 0;
+            VirusType? lastVirusType = null;
+
+            for (int x = 0; x < board.Width; x++)
+            {
+                var cell = board[x, y];
+                var virusType = cell?.VirusType;
+
+                if (cell.HasValue && virusType == lastVirusType)
+                {
+                    count++;
+                }
+                else
+                {
+                    if (count >= 4)
+                        matches.Add(new RectInt(x - count, y, count, 1));
+
+                    count = virusType.HasValue ? 1 : 0;
+
+                    lastVirusType = virusType;
+                }
+            }
+
+            if (count >= 4)
+                matches.Add(new RectInt(board.Width - count, y, count, 1));
+        }
+
+        return matches;
+    }
+
+    async Task DropUnsupportedPills(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            bool anythingMoved = false;
+
+            for (int y = 1; y < board.Height; y++)
+            {
+                for (int x = 0; x < board.Width; x++)
+                {
+                    var cell = board[x, y];
+                    if (cell.HasValue)
+                    {
+                        if (cell.Value.Kind == PieceKind.BrokenPill)
+                        {
+                            if (!board[x, y - 1].HasValue)
+                            {
+                                board[x, y - 1] = board[x, y];
+                                board[x, y] = null;
+                                cell.Value.GameObject.transform.position = BoardPosition(x, y - 1);
+                                anythingMoved = true;
+                            }
+                        }
+                        else if (cell.Value.Kind == PieceKind.PillFirst)
+                        {
+                            var secondLocation = FirstToSecond(new Vector2Int(x, y), cell.Value.Pill.PillRotation);
+
+                            if (!board[x, y - 1].HasValue &&
+                                !board[secondLocation + Vector2Int.down].HasValue)
+                            {
+                                board[x, y - 1] = board[x, y];
+                                board[secondLocation + Vector2Int.down] = board[secondLocation];
+                                board[x, y] = null;
+                                board[secondLocation] = null;
+                                cell.Value.GameObject.transform.position = BoardPosition(x, y - 1);
+                                anythingMoved = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!anythingMoved)
+                break;
+
+            await Task.Delay(TimeSpan.FromSeconds(SlowDropInterval));
+        }
     }
 
     Vector3 BoardPosition(int row, int col) => BoardPosition(new Vector2Int(row, col));
@@ -278,5 +549,13 @@ public class Game : MonoBehaviour
         }
 
         return false;
+    }
+
+    bool AnyVirusesAlive()
+    {
+        return board.ToEnumerable().Any(
+            p => p.HasValue && 
+            p.Value.Kind == PieceKind.Virus && 
+            !p.Value.Virus.IsDead);
     }
 }

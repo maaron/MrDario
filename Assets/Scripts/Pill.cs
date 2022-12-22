@@ -5,19 +5,11 @@ using UnityEngine;
 [ExecuteInEditMode]
 public class Pill : MonoBehaviour
 {
-    [SerializeField] PerHalf<VirusType> pillType;
     [SerializeField] PillRotation pillRotation;
     [SerializeField] PerHalf<HalfPill> halves;
 
-    public PerHalf<VirusType> PillType
-    {
-        get => pillType;
-        set
-        {
-            pillType = value;
-            UpdateHalves();
-        }
-    }
+    public HalfPill Left => halves.Left;
+    public HalfPill Right => halves.Right;
 
     public PillRotation PillRotation
     {
@@ -31,14 +23,7 @@ public class Pill : MonoBehaviour
 
     private void OnValidate()
     {
-        UpdateHalves();
         UpdateRotation();
-    }
-
-    void UpdateHalves()
-    {
-        halves.Left.VirusType = pillType.Left;
-        halves.Right.VirusType = pillType.Right;
     }
 
     void UpdateRotation()

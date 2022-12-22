@@ -46,9 +46,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7d5e5812b3e66344c8abd47ef0afb02b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  pillType:
-    Left: 1
-    Right: 2
   pillRotation: 0
   halves:
     Left: {fileID: 1973153065870694280}
@@ -60,6 +57,14 @@ PrefabInstance:
   m_Modification:
     m_TransformParent: {fileID: 1973153065856861564}
     m_Modifications:
+    - target: {fileID: 499209838247039452, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: b9fab04bf04cb8f418b863e047318784, type: 2}
+    - target: {fileID: 4548847037833515040, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 4548847037833515045, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
@@ -67,6 +72,10 @@ PrefabInstance:
     - target: {fileID: 4548847037835554796, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
       propertyPath: m_Name
       value: HalfPillRight
+      objectReference: {fileID: 0}
+    - target: {fileID: 4548847037835554798, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
+      propertyPath: isDead
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4548847037835554798, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
       propertyPath: virusType
@@ -104,10 +113,18 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: -90
       objectReference: {fileID: 0}
+    - target: {fileID: 4548847038120926920, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 4548847038120926925, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
       objectReference: {fileID: 2100000, guid: b9fab04bf04cb8f418b863e047318784, type: 2}
+    - target: {fileID: 8593783526305816021, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
 --- !u!114 &2612875058325220168 stripped
@@ -133,6 +150,10 @@ PrefabInstance:
   m_Modification:
     m_TransformParent: {fileID: 1973153065856861564}
     m_Modifications:
+    - target: {fileID: 499209838247039452, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 285dd643d029cb246aac021229887b80, type: 2}
     - target: {fileID: 4548847037833515045, guid: d5a36575b6f261345881c24e8b9efdb3, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 

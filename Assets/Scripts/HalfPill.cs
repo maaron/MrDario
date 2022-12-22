@@ -7,6 +7,11 @@ using UnityEngine;
 public class HalfPill : MonoBehaviour
 {
     [SerializeField] VirusType virusType;
+    [SerializeField] bool isDead;
+    [SerializeField] PerVirusType<Material> Materials;
+    [SerializeField] MeshRenderer ballRenderer, cylinderRenderer;
+    [SerializeField] LineRenderer deadRenderer;
+
     public VirusType VirusType
     {
         get => virusType;
@@ -17,23 +22,20 @@ public class HalfPill : MonoBehaviour
         }
     }
 
-    [SerializeField] PerVirusType<Material> Materials;
-    [SerializeField] MeshRenderer ballRenderer, cylinderRenderer;
-
+    public bool IsDead
+    {
+        get => isDead;
+        set
+        {
+            isDead = value;
+            UpdateDeadness();
+        }
+    }
+    
     private void OnValidate()
     {
         UpdateMaterials();
-    }
-
-    // Start is called before the first frame update
-    void Start()
-    {
-        
-    }
-
-    // Update is called once per frame
-    void Update()
-    {
+        UpdateDeadness();
     }
 
     void UpdateMaterials()
@@ -46,6 +48,16 @@ public class HalfPill : MonoBehaviour
 
             if (cylinderRenderer != null)
                 cylinderRenderer.material = m;
+
+            if (deadRenderer != null)
+                deadRenderer.material = m;
         }
+    }
+
+    void UpdateDeadness()
+    {
+        ballRenderer.gameObject.SetActive(!isDead);
+        cylinderRenderer.gameObject.SetActive(!isDead);
+        deadRenderer.gameObject.SetActive(isDead);
     }
 }
