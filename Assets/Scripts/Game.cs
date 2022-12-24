@@ -27,6 +27,7 @@ public class Game : MonoBehaviour
     [SerializeField] BrokenPill brokenPillPrefab;
     [SerializeField] float SlowDropInterval = 1.0f;
     [SerializeField] float FastDropInterval = 0.1f;
+    [SerializeField] float FallDropInterval = 0.2f;
     [SerializeField] GameObject loseGameObject, winGameObject;
 
     CancellationTokenSource cts;
@@ -184,7 +185,7 @@ public class Game : MonoBehaviour
         pill.Right.VirusType = Generator.VirusType(r);
 
         // TODO: Animate the throwing of the pill
-        await Task.Yield();
+        await Task.Delay(TimeSpan.FromSeconds(FallDropInterval), ct);
 
         // Add the pill to the board
         board[location.min] = new GamePiece(PieceKind.PillFirst, pill.gameObject);
@@ -272,7 +273,7 @@ public class Game : MonoBehaviour
 
     async Task DestroyMatches(List<RectInt> matches, CancellationToken ct)
     {
-        await Task.Delay(TimeSpan.FromSeconds(SlowDropInterval), ct);
+        await Task.Delay(TimeSpan.FromSeconds(FallDropInterval), ct);
 
         // Remove the destroyed pieces, breaking pills as necessary.
         foreach (var match in matches)
@@ -472,16 +473,14 @@ public class Game : MonoBehaviour
                         {
                             var secondLocation = FirstToSecond(new Vector2Int(x, y), cell.Value.Pill.PillRotation);
 
-                            if (!board[x, y - 1].HasValue &&
-                                !board[secondLocation + Vector2Int.down].HasValue)
-                            {
-                                board[x, y - 1] = board[x, y];
-                                board[secondLocation + Vector2Int.down] = board[secondLocation];
-                                board[x, y] = null;
-                                board[secondLocation] = null;
-                                cell.Value.GameObject.transform.position = BoardPosition(x, y - 1);
+                            var rect = new RectInt();
+                            rect.xMin = Math.Min(x, secondLocation.x);
+                            rect.yMin = Math.Min(y, secondLocation.y);
+                            rect.xMax = Math.Max(x, secondLocation.x) + 1;
+                            rect.yMax = Math.Max(y, secondLocation.y) + 1;
+
+                            if (TryTranslatePill(cell.Value.Pill, ref rect, Vector2Int.down))
                                 anythingMoved = true;
-                            }
                         }
                     }
                 }
@@ -490,7 +489,7 @@ public class Game : MonoBehaviour
             if (!anythingMoved)
                 break;
 
-            await Task.Delay(TimeSpan.FromSeconds(SlowDropInterval));
+            await Task.Delay(TimeSpan.FromSeconds(FallDropInterval), ct);
         }
     }
 

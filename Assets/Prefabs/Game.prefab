@@ -53,7 +53,8 @@ MonoBehaviour:
   pillPrefab: {fileID: 1973153065856861563, guid: 3575303a1490c6b4383013a4b8033f95, type: 3}
   brokenPillPrefab: {fileID: 8432293272373040938, guid: cce6992aa80967146921a75b27820c94, type: 3}
   SlowDropInterval: 1
-  FastDropInterval: 0.1
+  FastDropInterval: 0.04
+  FallDropInterval: 0.3
   loseGameObject: {fileID: 3652746754135562822}
   winGameObject: {fileID: 5267636502869459493}
 --- !u!1 &2965646820169301259
