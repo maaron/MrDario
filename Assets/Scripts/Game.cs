@@ -147,7 +147,12 @@ public class Game : MonoBehaviour
                 })
                 .NonNull();
 
-            var type = Generator.OneOf(choices.Except(disallowedChoices).ToArray()).Nullable()(r);
+            var allowed = choices.Except(disallowedChoices).ToArray();
+
+            // Make sure there's at least one choice available, otherwise OneOf will throw.
+            if (allowed.Length == 0) return null;
+
+            var type = Generator.OneOf(allowed).Nullable()(r);
 
             Virus virus = null;
             if (type.HasValue)

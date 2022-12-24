@@ -19,8 +19,13 @@ public static class Generator
     public static Generator<PerHalf<T>> PerHalf<T>(this Generator<T> g) =>
         r => new PerHalf<T>(g(r), g(r));
 
-    public static Generator<T> OneOf<T>(params T[] choices) => 
-        IntRange(0, choices.Length).Select(i => choices[i]);
+    public static Generator<T> OneOf<T>(params T[] choices)
+    {
+        if (choices.Length == 0)
+            throw new ArgumentException($"choices must contain at least one element");
+
+        return IntRange(0, choices.Length).Select(i => choices[i]);
+    }
 
     public static Generator<T> Enum<T>() where T : struct =>
         OneOf((T[])System.Enum.GetValues(typeof(T)));
