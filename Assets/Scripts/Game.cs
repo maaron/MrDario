@@ -31,6 +31,8 @@ public class Game : MonoBehaviour
 
     [SerializeField] InputActionAsset inputActions;
 
+    Queue<Drop> pendingDrops = new Queue<Drop>();
+
     private void Awake()
     {
         foreach (var map in inputActions.actionMaps)
@@ -69,15 +71,28 @@ public class Game : MonoBehaviour
 
         while (!ct.IsCancellationRequested)
         {
-            var location = await ThrowPill(ct);
-            
-            if (!location.HasValue)
+            if (pendingDrops.Count > 0)
             {
-                await Lose(ct);
-                return;
+                if (!await DropDrop(ct))
+                {
+                    await Lose(ct);
+                    return;
+                }
+            }
+            else
+            {
+                var location = await ThrowPill(ct);
+
+                if (!location.HasValue)
+                {
+                    await Lose(ct);
+                    return;
+                }
+            
+                await PlacePill(location.Value, ct);
             }
 
-            await PlacePill(location.Value, ct);
+            int dropCount = 0;
 
             while (!ct.IsCancellationRequested)
             {
@@ -93,9 +108,13 @@ public class Game : MonoBehaviour
                         return;
                     }
 
+                    dropCount += Math.Min(4, matches.Count / 2);
+
                     await DestroyMatches(matches, ct);
              
                     await DropUnsupportedPills(ct);
+
+                    GenerateDrop(dropCount);
                 }
                 else
                 {
@@ -566,5 +585,50 @@ public class Game : MonoBehaviour
             p => p.HasValue && 
             p.Value.Kind == PieceKind.Virus && 
             !p.Value.Virus.IsDead);
+    }
+
+    void GenerateDrop(int dropCount)
+    {
+        var drop = new Drop(
+            xOffsets: Enumerable.Range(0, dropCount).Select(i => i * 2).ToArray(),
+            colors: Enumerable.Range(0, dropCount).Select(i => Generator.VirusType(r)).ToArray());
+
+        DropGenerated(drop);
+    }
+
+    public event Action<Drop> DropGenerated = delegate { };
+
+    public void AddDrop(Drop drop)
+    {
+        pendingDrops.Enqueue(drop);
+    }
+
+    async Task<bool> DropDrop(CancellationToken ct)
+    {
+        if (pendingDrops.Count < 0) throw new Exception("No drops are pending");
+
+        var drop = pendingDrops.Dequeue();
+
+        for (int i = 0; i < drop.XOffsets.Length; i++)
+        {
+            var location = new Vector2Int(drop.XOffsets[i], board.Height - 1);
+            if (board[location].HasValue)
+            {
+                return false;
+            }
+            else
+            {
+                var brokenPill = GameObject.Instantiate<BrokenPill>(brokenPillPrefab, bottleContents.transform);
+
+                brokenPill.transform.localPosition = BoardPosition(location);
+                brokenPill.VirusType = drop.Colors[i];
+
+                board[location] = new GamePiece(PieceKind.BrokenPill, brokenPill.gameObject);
+            }
+        }
+
+        await DropUnsupportedPills(ct);
+
+        return true;
     }
 }
