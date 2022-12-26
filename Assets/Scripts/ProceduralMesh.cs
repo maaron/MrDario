@@ -59,12 +59,15 @@ public abstract class ProceduralMesh : MonoBehaviour
         // unneccessary prefab overrides of the generated mesh.  Unfortunately, setting
         // HideAndDontSave only on the mesh doesn't work.  When used within a prefab, containing
         // prefabs/scenes will generate an associated override.
-        if (GetComponent<MeshFilter>() == null)
+        if (mesh == null)
         {
             mesh = new Mesh();
             mesh.hideFlags = HideFlags.HideAndDontSave;
-            var filter = GetComponent<MeshFilter>();
-            if (filter == null) filter = this.AddComponent<MeshFilter>();
+        }
+
+        if (GetComponent<MeshFilter>() == null)
+        {
+            var filter = this.AddComponent<MeshFilter>();
             filter.hideFlags = HideFlags.HideAndDontSave;
             filter.mesh = mesh;
             needsUpdate = true;
