@@ -5,11 +5,8 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Unity.Mathematics;
-using Unity.VisualScripting;
-using UnityEditor.Experimental.GraphView;
-using UnityEditorInternal;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class Game : MonoBehaviour
 {
@@ -22,7 +19,7 @@ public class Game : MonoBehaviour
     System.Random r = new System.Random(0);
 
     [SerializeField] Virus virusPrefab;
-    [SerializeField] GameObject virusParent;
+    [SerializeField] GameObject bottleContents;
     [SerializeField] Pill pillPrefab;
     [SerializeField] BrokenPill brokenPillPrefab;
     [SerializeField] float SlowDropInterval = 1.0f;
@@ -31,6 +28,17 @@ public class Game : MonoBehaviour
     [SerializeField] GameObject loseGameObject, winGameObject;
 
     CancellationTokenSource cts;
+
+    [SerializeField] InputActionAsset inputActions;
+
+    private void Awake()
+    {
+        foreach (var map in inputActions.actionMaps)
+            map.Enable();
+
+        var pressed = inputActions["Down"].IsPressed();
+        Debug.Log($"pressed = {pressed}");
+    }
 
     async void Start()
     {
@@ -159,7 +167,8 @@ public class Game : MonoBehaviour
             {
                 count++;
 
-                virus = GameObject.Instantiate<Virus>(virusPrefab, BoardPosition(i, j), Quaternion.identity, virusParent.transform);
+                virus = GameObject.Instantiate<Virus>(virusPrefab, bottleContents.transform);
+                virus.transform.localPosition = BoardPosition(i, j);
                 virus.VirusType = type.Value;
 
                 return new GamePiece
@@ -185,7 +194,8 @@ public class Game : MonoBehaviour
             return null;
 
         // Generate a new pill
-        var pill = GameObject.Instantiate<Pill>(pillPrefab, BoardPosition(location.min), Quaternion.identity, transform);
+        var pill = GameObject.Instantiate<Pill>(pillPrefab, bottleContents.transform);
+        pill.transform.localPosition = BoardPosition(location.min);
         pill.Left.VirusType = Generator.VirusType(r);
         pill.Right.VirusType = Generator.VirusType(r);
 
@@ -224,7 +234,8 @@ public class Game : MonoBehaviour
         {
             var currentTime = Time.realtimeSinceStartup;
 
-            if (Input.GetKey(KeyCode.DownArrow) && currentTime > fastStartTime + FastDropInterval)
+            if (inputActions["Down"].IsPressed()
+                && currentTime > fastStartTime + FastDropInterval)
             {
                 // Reset timers
                 slowStartTime = Time.realtimeSinceStartup;
@@ -234,16 +245,16 @@ public class Game : MonoBehaviour
                     return;
             }
 
-            if (Input.GetKeyDown(KeyCode.LeftArrow))
+            if (inputActions["Left"].WasPerformedThisFrame())
                 TryTranslatePill(pill, ref rect, Vector2Int.left);
 
-            if (Input.GetKeyDown(KeyCode.RightArrow))
+            if (inputActions["Right"].WasPerformedThisFrame())
                 TryTranslatePill(pill, ref rect, Vector2Int.right);
 
-            if (Input.GetKeyDown(KeyCode.A))
+            if (inputActions["RotateLeft"].WasPerformedThisFrame())
                 TryRotatePill(pill, ref rect, pill.PillRotation.Ccw());
 
-            if (Input.GetKeyDown(KeyCode.D))
+            if (inputActions["RotateRight"].WasPerformedThisFrame())
                 TryRotatePill(pill, ref rect, pill.PillRotation.Cw());
 
             if (currentTime > slowStartTime + SlowDropInterval)
@@ -300,12 +311,9 @@ public class Game : MonoBehaviour
                                 var otherLoc = FirstToSecond(pos, pill.PillRotation);
                                 if (board[otherLoc].HasValue)
                                 {
-                                    var brokenPill = GameObject.Instantiate<BrokenPill>(
-                                        brokenPillPrefab,
-                                        BoardPosition(otherLoc),
-                                        Quaternion.identity,
-                                        transform);
-
+                                    var brokenPill = GameObject.Instantiate<BrokenPill>(brokenPillPrefab, bottleContents.transform);
+                                    
+                                    brokenPill.transform.localPosition = BoardPosition(otherLoc);
                                     brokenPill.VirusType = pill.Right.VirusType;
 
                                     board[otherLoc] = new GamePiece(PieceKind.BrokenPill, brokenPill.gameObject);
@@ -320,12 +328,9 @@ public class Game : MonoBehaviour
                                 var otherLoc = SecondToFirst(pos, pill.PillRotation);
                                 if (board[otherLoc].HasValue)
                                 {
-                                    var brokenPill = GameObject.Instantiate<BrokenPill>(
-                                        brokenPillPrefab,
-                                        BoardPosition(otherLoc),
-                                        Quaternion.identity,
-                                        transform);
-
+                                    var brokenPill = GameObject.Instantiate<BrokenPill>(brokenPillPrefab, bottleContents.transform);
+                                    
+                                    brokenPill.transform.localPosition = BoardPosition(otherLoc);
                                     brokenPill.VirusType = pill.Left.VirusType;
 
                                     board[otherLoc] = new GamePiece(PieceKind.BrokenPill, brokenPill.gameObject);
@@ -470,7 +475,7 @@ public class Game : MonoBehaviour
                             {
                                 board[x, y - 1] = board[x, y];
                                 board[x, y] = null;
-                                cell.Value.GameObject.transform.position = BoardPosition(x, y - 1);
+                                cell.Value.GameObject.transform.localPosition = BoardPosition(x, y - 1);
                                 anythingMoved = true;
                             }
                         }
@@ -535,13 +540,13 @@ public class Game : MonoBehaviour
 
             if (rotation == PillRotation.Zero || rotation == PillRotation.ThreeQuarter)
             {
-                pill.transform.position = BoardPosition(dst.min);
+                pill.transform.localPosition = BoardPosition(dst.min);
                 board[dst.min] = new GamePiece(PieceKind.PillFirst, pill.gameObject);
                 board[dst.max - new Vector2Int(1, 1)] = new GamePiece(PieceKind.PillSecond, pill.gameObject);
             }
             else
             {
-                pill.transform.position = BoardPosition(dst.max - new Vector2Int(1, 1));
+                pill.transform.localPosition = BoardPosition(dst.max - new Vector2Int(1, 1));
                 board[dst.min] = new GamePiece(PieceKind.PillSecond, pill.gameObject);
                 board[dst.max - new Vector2Int(1, 1)] = new GamePiece(PieceKind.PillFirst, pill.gameObject);
             }
