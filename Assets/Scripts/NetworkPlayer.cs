@@ -6,18 +6,6 @@ using UnityEngine;
 
 public class NetworkPlayer : NetworkBehaviour
 {
-    // Start is called before the first frame update
-    void Start()
-    {
-        
-    }
-
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
-
     void AddDrop(Drop drop)
     {
         var game = GameObject.FindObjectOfType<Game>();
@@ -33,4 +21,15 @@ public class NetworkPlayer : NetworkBehaviour
 
     [ClientRpc]
     public void AddDropClientRpc(Drop drop, ClientRpcParams clientRpcParams = new()) => AddDrop(drop);
+
+    [ClientRpc]
+    public void StartGameClientRpc(Settings settings, ClientRpcParams clientRpcParams = new())
+    {
+        var game = GameObject.FindObjectOfType<Game>();
+        if (game != null)
+        {
+            Debug.Log($"Starting game with speed = {settings.DropSpeedMultiplier}, depth = {settings.VirusDepth}");
+            game.StartGame(settings);
+        }
+    }
 }

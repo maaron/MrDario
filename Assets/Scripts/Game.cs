@@ -5,16 +5,15 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Unity.Netcode;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.UI;
 
 public class Game : MonoBehaviour
 {
     Board<GamePiece?> board = new(8, 16);
-
-    List<Virus> viruses = new();
-    List<BrokenPill> brokenPills = new();
-    List<Pill> pills = new();
 
     System.Random r = new System.Random(0);
 
@@ -26,8 +25,20 @@ public class Game : MonoBehaviour
     [SerializeField] float FastDropInterval = 0.1f;
     [SerializeField] float FallDropInterval = 0.2f;
     [SerializeField] GameObject loseGameObject, winGameObject;
+    [SerializeField] Button settingsButton;
+    [SerializeField] SettingsDialog settingsDialog;
+    [SerializeField] Button multiplayerButton;
+    [SerializeField] MultiplayerDialog multiplayerDialog;
+
+    bool isPaused = false;
+    Settings settings = new Settings
+    {
+        DropSpeedMultiplier = 1.0f,
+        VirusDepth = 5
+    };
 
     CancellationTokenSource cts;
+    Task gameTask;
 
     [SerializeField] InputActionAsset inputActions;
 
@@ -38,15 +49,65 @@ public class Game : MonoBehaviour
         foreach (var map in inputActions.actionMaps)
             map.Enable();
 
-        var pressed = inputActions["Down"].IsPressed();
-        Debug.Log($"pressed = {pressed}");
+        settingsButton.onClick.AddListener(() =>
+        {
+            isPaused = true;
+
+            settingsDialog.RunDialog(settings, async newSettings =>
+            {
+                if (newSettings.HasValue)
+                {
+                    await StopGame();
+
+                    settings = newSettings.Value;
+
+                    Start();
+                }
+
+                isPaused = false;
+            });
+        });
+
+        multiplayerButton.onClick.AddListener(() =>
+        {
+            isPaused = true;
+
+            multiplayerDialog.RunDialog(async mode =>
+            {
+                if (mode.HasValue)
+                {
+                    await StopGame();
+
+                    // If we are the server, start the game.  Otherwise, wait for the server to
+                    // tell us to start, which happens via NetworkPlayer.
+                    if (mode.Value == MultiplayerMode.Server)
+                    {
+                        Start();
+
+                        var networkManager = NetworkManager.Singleton;
+                        var clientPair = networkManager.ConnectedClients.FirstOrDefault();
+                        if (clientPair.Value != null)
+                        {
+                            if (clientPair.Value.PlayerObject.TryGetComponent<NetworkPlayer>(out var peer))
+                            {
+                                peer.StartGameClientRpc(settings);
+                            }
+                        }
+                    }
+                }
+
+                isPaused = false;
+            });
+        });
     }
 
     async void Start()
     {
         cts = new CancellationTokenSource();
 
-        await RunGameForever(cts.Token);
+        gameTask = RunGameForever(cts.Token);
+
+        await gameTask;
     }
 
     private void OnDestroy()
@@ -124,7 +185,7 @@ public class Game : MonoBehaviour
         }
     }
 
-    public void Generate()
+    void Generate()
     {
         int count = 0;
 
@@ -136,9 +197,7 @@ public class Game : MonoBehaviour
 
         board.GenerateRowMajor((i, j) =>
         {
-            if (j > board.Height / 2) return null;
-
-            if (count > 5) return null;
+            if (j >= settings.VirusDepth) return null;
 
             var choices = (VirusType[])Enum.GetValues(typeof(VirusType));
 
@@ -219,7 +278,7 @@ public class Game : MonoBehaviour
         pill.Right.VirusType = Generator.VirusType(r);
 
         // TODO: Animate the throwing of the pill
-        await Task.Delay(TimeSpan.FromSeconds(FallDropInterval), ct);
+        await Wait(FallDropInterval, ct);
 
         // Add the pill to the board
         board[location.min] = new GamePiece(PieceKind.PillFirst, pill.gameObject);
@@ -232,14 +291,14 @@ public class Game : MonoBehaviour
     {
         loseGameObject.SetActive(true);
 
-        await Task.Delay(TimeSpan.FromSeconds(2), ct);
+        await Wait(2, ct);
     }
 
     async Task Win(CancellationToken ct)
     {
         winGameObject.SetActive(true);
 
-        await Task.Delay(TimeSpan.FromSeconds(2), ct);
+        await Wait(2, ct);
     }
 
     async Task PlacePill(RectInt rect, CancellationToken ct)
@@ -249,8 +308,10 @@ public class Game : MonoBehaviour
         var slowStartTime = Time.realtimeSinceStartup;
         var fastStartTime = float.NegativeInfinity;
 
-        while (!ct.IsCancellationRequested)
+        while (true)
         {
+            ct.ThrowIfCancellationRequested();
+
             var currentTime = Time.realtimeSinceStartup;
 
             if (inputActions["Down"].IsPressed()
@@ -276,7 +337,7 @@ public class Game : MonoBehaviour
             if (inputActions["RotateRight"].WasPerformedThisFrame())
                 TryRotatePill(pill, ref rect, pill.PillRotation.Cw());
 
-            if (currentTime > slowStartTime + SlowDropInterval)
+            if (currentTime > slowStartTime + SlowDropInterval / settings.DropSpeedMultiplier)
             {
                 // Reset timers
                 slowStartTime = Time.realtimeSinceStartup;
@@ -286,7 +347,7 @@ public class Game : MonoBehaviour
                     return;
             }
 
-            await this.NextUpdate(ct);
+            await Wait(0, ct);
         }
     }
 
@@ -308,7 +369,7 @@ public class Game : MonoBehaviour
 
     async Task DestroyMatches(List<RectInt> matches, CancellationToken ct)
     {
-        await Task.Delay(TimeSpan.FromSeconds(FallDropInterval), ct);
+        await Wait(FallDropInterval, ct);
 
         // Remove the destroyed pieces, breaking pills as necessary.
         foreach (var match in matches)
@@ -518,7 +579,7 @@ public class Game : MonoBehaviour
             if (!anythingMoved)
                 break;
 
-            await Task.Delay(TimeSpan.FromSeconds(FallDropInterval), ct);
+            await Wait(FallDropInterval, ct);
         }
     }
 
@@ -630,5 +691,48 @@ public class Game : MonoBehaviour
         await DropUnsupportedPills(ct);
 
         return true;
+    }
+
+    async Task Wait(float seconds, CancellationToken ct)
+    {
+        while (isPaused)
+        {
+            await this.NextUpdate(ct);
+        }
+
+        var duration = seconds - Time.deltaTime;
+        if (duration > 0)
+            await Task.Delay(TimeSpan.FromSeconds(duration), ct);
+        else
+            await this.NextUpdate(ct);
+    }
+
+    private void PauseGame()
+    {
+        isPaused = true;
+    }
+
+    async Task StopGame()
+    {
+        cts.Cancel();
+        try
+        {
+            Debug.Log("Stopping game...");
+            await gameTask;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        Debug.Log("Game stopped");
+    }
+
+    public async void StartGame(Settings newSettings)
+    {
+        await StopGame();
+
+        settings = newSettings;
+
+        Start();
     }
 }

@@ -16,42 +16,6 @@ namespace Unity.Netcode.Samples
             game.DropGenerated += SendDrop;
         }
 
-        private void OnGUI()
-        {
-            GUI.skin.button.fontSize = 40;
-            GUILayout.BeginArea(new Rect(10, 10, 600, 300));
-
-            var networkManager = NetworkManager.Singleton;
-            if (!networkManager.IsClient && !networkManager.IsServer)
-            {
-                if (GUILayout.Button("Host"))
-                {
-                    networkManager.StartHost();
-                }
-
-                if (GUILayout.Button("Client"))
-                {
-                    networkManager.StartClient();
-                }
-
-                if (GUILayout.Button("Server"))
-                {
-                    networkManager.StartServer();
-                }
-            }
-            else
-            {
-                GUILayout.Label($"Mode: {(networkManager.IsHost ? "Host" : networkManager.IsServer ? "Server" : "Client")}");
-
-                if (GUILayout.Button("Send Drop"))
-                {
-                    SendDrop(new Drop(new[] { 1, 3 }, new[] { VirusType.Blue, VirusType.Yellow }));
-                }
-            }
-
-            GUILayout.EndArea();
-        }
-
         public void SendDrop(Drop drop)
         {
             var networkManager = NetworkManager.Singleton;

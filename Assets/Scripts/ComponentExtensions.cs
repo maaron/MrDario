@@ -10,6 +10,7 @@ public static class ComponentExtensions
 {
     public static Task NextUpdate(this MonoBehaviour mb, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         var tcs = new TaskCompletionSource<int>();
         mb.StartCoroutine(Routine(tcs));
         return tcs.Task;
