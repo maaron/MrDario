@@ -24,6 +24,9 @@ public class Game : MonoBehaviour
     [SerializeField] float SlowDropInterval = 1.0f;
     [SerializeField] float FastDropInterval = 0.1f;
     [SerializeField] float FallDropInterval = 0.2f;
+    [SerializeField] float KeyRepeatDelay = 0.35f;
+    [SerializeField] float KeyRepeatInterval = 0.04f;
+
     [SerializeField] GameObject 
         loseGameObject, 
         winGameObject,
@@ -45,10 +48,28 @@ public class Game : MonoBehaviour
 
     Queue<Drop> pendingDrops = new Queue<Drop>();
 
+    RepeatAction leftAction;
+    RepeatAction rightAction;
+
+    void OnValidate()
+    {
+        foreach (var action in new[] { leftAction, rightAction })
+        {
+            if (action != null)
+            {
+                action.RepeatDelay = KeyRepeatDelay;
+                action.RepeatInterval = KeyRepeatInterval;
+            }
+        }
+    }
+
     private void Awake()
     {
         foreach (var map in inputActions.actionMaps)
             map.Enable();
+
+        leftAction = new RepeatAction(inputActions["Left"], KeyRepeatDelay, KeyRepeatInterval);
+        rightAction = new RepeatAction(inputActions["Right"], KeyRepeatDelay, KeyRepeatInterval);
     }
 
     private void Start() { }
@@ -122,17 +143,19 @@ public class Game : MonoBehaviour
         }
     }
 
-    void Generate()
+    void ResetBoard()
     {
-        int count = 0;
-
-        foreach (var cell in board.ToEnumerable())
-        {
-            if (cell.HasValue)
-                GameObject.Destroy(cell.Value.GameObject);
-        }
+        foreach (Transform child in bottleContents.transform)
+            GameObject.Destroy(child.gameObject);
 
         board.Fill(null);
+    }
+
+    void Generate()
+    {
+        ResetBoard();
+
+        int count = 0;
 
         board.GenerateRowMajor((i, j) =>
         {
@@ -254,6 +277,8 @@ public class Game : MonoBehaviour
         var slowStartTime = Time.realtimeSinceStartup;
         var fastStartTime = float.NegativeInfinity;
 
+        var lastFrameCount = Time.frameCount;
+
         while (true)
         {
             ct.ThrowIfCancellationRequested();
@@ -271,10 +296,10 @@ public class Game : MonoBehaviour
                     return;
             }
 
-            if (inputActions["Left"].WasPerformedThisFrame())
+            if (leftAction.IsTriggered())
                 TryTranslatePill(pill, ref rect, Vector2Int.left);
 
-            if (inputActions["Right"].WasPerformedThisFrame())
+            if (rightAction.IsTriggered())
                 TryTranslatePill(pill, ref rect, Vector2Int.right);
 
             if (inputActions["RotateLeft"].WasPerformedThisFrame())
@@ -294,6 +319,12 @@ public class Game : MonoBehaviour
             }
 
             await Wait(0, ct);
+
+            var missedFrames = Time.frameCount - lastFrameCount - 1;
+            if (missedFrames > 0)
+                Debug.Log($"Missed {missedFrames} frames");
+
+            lastFrameCount = Time.frameCount;
         }
     }
 
@@ -548,9 +579,28 @@ public class Game : MonoBehaviour
 
     bool TryRotatePill(Pill pill, ref RectInt src, PillRotation rotation)
     {
-        var dst = new RectInt(src.min, new Vector2Int(src.height, src.width));
+        var size = new Vector2Int(src.height, src.width);
+        var dst = new RectInt(src.min, size);
 
-        return TryMovePill(pill, ref src, dst, rotation);
+        if (TryMovePill(pill, ref src, dst, rotation))
+            return true;
+
+        if (size.x > size.y)
+        {
+            // Allow a horizontal pill to shift left or right to avoid obstacles.
+            if (TryMovePill(pill, ref src, new RectInt(src.min + Vector2Int.left, size), rotation) ||
+                TryMovePill(pill, ref src, new RectInt(src.min + Vector2Int.right, size), rotation))
+                return true;
+        }
+        else
+        {
+            // Allow a vertical pill to shift up or down to avoid obstacles.
+            if (TryMovePill(pill, ref src, new RectInt(src.min + Vector2Int.up, size), rotation) ||
+                TryMovePill(pill, ref src, new RectInt(src.min + Vector2Int.down, size), rotation))
+                return true;
+        }
+
+        return false;
     }
 
     bool TryMovePill(Pill pill, ref RectInt src, RectInt dst, PillRotation rotation)
