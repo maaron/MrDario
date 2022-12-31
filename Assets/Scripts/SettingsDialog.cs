@@ -1,48 +1,52 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 
-public class SettingsDialog : MonoBehaviour
+public class SettingsDialog : Dialog<Settings?>
 {
     [SerializeField] Button acceptButton, cancelButton;
     [SerializeField] Slider fallSpeedSlider, virusDepthSlider;
+    [SerializeField] TMPro.TMP_InputField seedInput;
 
-    public void RunDialog(Settings settings, Action<Settings?> onComplete)
+    private void Awake()
     {
-        fallSpeedSlider.value = settings.DropSpeedMultiplier;
-        virusDepthSlider.value = settings.VirusDepth;
+        var acceptButtonBackground = acceptButton.GetComponent<Image>();
 
-        UnityAction onAccept = null;
-        UnityAction onCancel = null;
-        
-        onAccept = new UnityAction(() =>
+        seedInput.onValueChanged.AddListener(value =>
         {
-            acceptButton.onClick.RemoveListener(onAccept);
-            cancelButton.onClick.RemoveListener(onCancel);
-            gameObject.SetActive(false);
-
-            onComplete(new Settings
+            if (int.TryParse(value, out var val))
             {
-                DropSpeedMultiplier = fallSpeedSlider.value,
-                VirusDepth = (int)virusDepthSlider.value
-            });
+                acceptButton.interactable = true;
+                acceptButtonBackground.color = Color.white;
+            }
+            else
+            {
+                acceptButton.interactable = false;
+                acceptButtonBackground.color = new Color(250, 131, 131);
+            }
         });
+    }
 
-        onCancel = new UnityAction(() =>
-        {
-            acceptButton.onClick.RemoveListener(onAccept);
-            cancelButton.onClick.RemoveListener(onCancel);
-            gameObject.SetActive(false);
+    protected override Task<Settings?> RunInternal(CancellationToken ct)
+    {
+        var currentSettings = Settings.Load();
 
-            onComplete(null);
-        });
+        fallSpeedSlider.value = currentSettings.DropSpeedMultiplier;
+        virusDepthSlider.value = currentSettings.VirusDepth;
+        seedInput.text = currentSettings.Seed.ToString();
 
-        acceptButton.onClick.AddListener(onAccept);
-        cancelButton.onClick.AddListener(onCancel);
-
-        gameObject.SetActive(true);
+        return Proc.Any(
+            acceptButton.onClick.NextEvent().Select(_ => (Settings?)new Settings(
+                dropSpeedMultiplier: fallSpeedSlider.value,
+                virusDepth: (int)virusDepthSlider.value,
+                seed: int.Parse(seedInput.text))),
+            cancelButton.onClick.NextEvent().Select(_ => (Settings?)null))
+            (ct);
     }
 }

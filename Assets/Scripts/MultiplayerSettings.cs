@@ -6,17 +6,25 @@ using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
 
-public static class MultiplayerSettings
+public class MultiplayerSettings
 {
-    public static string Hostname
+    public string Hostname;
+    public int Port;
+
+    public MultiplayerSettings(string hostname, int port)
     {
-        get => PlayerPrefs.GetString("Multiplayer/Hostname", null);
-        set => PlayerPrefs.SetString("Multiplayer/Port", value);
+        this.Hostname = hostname;
+        this.Port = port;
     }
 
-    public static int Port
+    public static MultiplayerSettings Load() =>
+        new MultiplayerSettings(
+            hostname: PlayerPrefs.GetString("Multiplayer/Hostname", null),
+            port: PlayerPrefs.GetInt("Multiplayer/Port", 7777));
+
+    public void Save()
     {
-        get => PlayerPrefs.GetInt("Multiplayer/Port", 7777);
-        set => PlayerPrefs.SetInt("Multiplayer/Port", value);
+        PlayerPrefs.SetString("Multiplayer/Hostname", Hostname);
+        PlayerPrefs.SetInt("Multiplayer/Port", Port);
     }
 }

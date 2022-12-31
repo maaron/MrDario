@@ -15,7 +15,7 @@ public class Game : MonoBehaviour
 {
     Board<GamePiece?> board = new(8, 16);
 
-    System.Random r = new System.Random(0);
+    System.Random r = new ConsistentRandom(0);
 
     [SerializeField] Virus virusPrefab;
     [SerializeField] GameObject bottleContents;
@@ -24,11 +24,10 @@ public class Game : MonoBehaviour
     [SerializeField] float SlowDropInterval = 1.0f;
     [SerializeField] float FastDropInterval = 0.1f;
     [SerializeField] float FallDropInterval = 0.2f;
-    [SerializeField] GameObject loseGameObject, winGameObject;
-    [SerializeField] Button settingsButton;
-    [SerializeField] SettingsDialog settingsDialog;
-    [SerializeField] Button multiplayerButton;
-    [SerializeField] MultiplayerDialog multiplayerDialog;
+    [SerializeField] GameObject 
+        loseGameObject, 
+        winGameObject,
+        peerPausedGameObject;
 
     bool isPaused = false;
     Settings settings = new Settings
@@ -36,6 +35,8 @@ public class Game : MonoBehaviour
         DropSpeedMultiplier = 1.0f,
         VirusDepth = 5
     };
+
+    NetworkPlayer peer = null;
 
     CancellationTokenSource cts;
     Task gameTask;
@@ -48,79 +49,13 @@ public class Game : MonoBehaviour
     {
         foreach (var map in inputActions.actionMaps)
             map.Enable();
-
-        settingsButton.onClick.AddListener(() =>
-        {
-            isPaused = true;
-
-            settingsDialog.RunDialog(settings, async newSettings =>
-            {
-                if (newSettings.HasValue)
-                {
-                    await StopGame();
-
-                    settings = newSettings.Value;
-
-                    Start();
-                }
-
-                isPaused = false;
-            });
-        });
-
-        multiplayerButton.onClick.AddListener(() =>
-        {
-            isPaused = true;
-
-            multiplayerDialog.RunDialog(async mode =>
-            {
-                if (mode.HasValue)
-                {
-                    await StopGame();
-
-                    // If we are the server, start the game.  Otherwise, wait for the server to
-                    // tell us to start, which happens via NetworkPlayer.
-                    if (mode.Value == MultiplayerMode.Server)
-                    {
-                        Start();
-
-                        var networkManager = NetworkManager.Singleton;
-                        var clientPair = networkManager.ConnectedClients.FirstOrDefault();
-                        if (clientPair.Value != null)
-                        {
-                            if (clientPair.Value.PlayerObject.TryGetComponent<NetworkPlayer>(out var peer))
-                            {
-                                peer.StartGameClientRpc(settings);
-                            }
-                        }
-                    }
-                }
-
-                isPaused = false;
-            });
-        });
     }
 
-    async void Start()
-    {
-        cts = new CancellationTokenSource();
-
-        gameTask = RunGameForever(cts.Token);
-
-        await gameTask;
-    }
+    private void Start() { }
 
     private void OnDestroy()
     {
         cts?.Cancel();
-    }
-
-    async Task RunGameForever(CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            await RunGame(ct);
-        }
     }
 
     async Task RunGame(CancellationToken ct)
@@ -149,11 +84,11 @@ public class Game : MonoBehaviour
                     await Lose(ct);
                     return;
                 }
-            
+
                 await PlacePill(location.Value, ct);
             }
 
-            int dropCount = 0;
+            int matchCount = 0;
 
             while (!ct.IsCancellationRequested)
             {
@@ -169,19 +104,21 @@ public class Game : MonoBehaviour
                         return;
                     }
 
-                    dropCount += Math.Min(4, matches.Count / 2);
+                    matchCount += matches.Count;
 
                     await DestroyMatches(matches, ct);
-             
+
                     await DropUnsupportedPills(ct);
 
-                    GenerateDrop(dropCount);
                 }
                 else
                 {
                     break;
                 }
             }
+
+            if (matchCount > 1)
+                GenerateDrop(matchCount);
         }
     }
 
@@ -194,6 +131,8 @@ public class Game : MonoBehaviour
             if (cell.HasValue)
                 GameObject.Destroy(cell.Value.GameObject);
         }
+
+        board.Fill(null);
 
         board.GenerateRowMajor((i, j) =>
         {
@@ -231,9 +170,12 @@ public class Game : MonoBehaviour
                     else 
                         return (VirusType?)null;
                 })
-                .NonNull();
+                .NonNull()
+                .ToArray();
 
-            var allowed = choices.Except(disallowedChoices).ToArray();
+            var allowed = choices
+                .Except(disallowedChoices)
+                .ToArray();
 
             // Make sure there's at least one choice available, otherwise OneOf will throw.
             if (allowed.Length == 0) return null;
@@ -291,12 +233,16 @@ public class Game : MonoBehaviour
     {
         loseGameObject.SetActive(true);
 
+        if (peer != null) peer.End(weWon: false);
+
         await Wait(2, ct);
     }
 
     async Task Win(CancellationToken ct)
     {
         winGameObject.SetActive(true);
+
+        if (peer != null) peer.End(weWon: true);
 
         await Wait(2, ct);
     }
@@ -648,16 +594,22 @@ public class Game : MonoBehaviour
             !p.Value.Virus.IsDead);
     }
 
-    void GenerateDrop(int dropCount)
+    void GenerateDrop(int matchCount)
     {
+        int dropCount = Math.Min(4, matchCount);
+
+        // Drop offsets are not based on the pseudo-random seed, but a really random number.
+        var dropRand = new System.Random();
+
+        var xOffsets = Generator.Subset(dropCount, Enumerable.Range(0, board.Width).ToArray())(dropRand);
+
         var drop = new Drop(
-            xOffsets: Enumerable.Range(0, dropCount).Select(i => i * 2).ToArray(),
-            colors: Enumerable.Range(0, dropCount).Select(i => Generator.VirusType(r)).ToArray());
+            xOffsets: xOffsets,
+            colors: Enumerable.Range(0, dropCount).Select(i => Generator.VirusType(dropRand)).ToArray());
 
-        DropGenerated(drop);
+        if (peer != null)
+            peer.AddDrop(drop);
     }
-
-    public event Action<Drop> DropGenerated = delegate { };
 
     public void AddDrop(Drop drop)
     {
@@ -707,14 +659,46 @@ public class Game : MonoBehaviour
             await this.NextUpdate(ct);
     }
 
-    private void PauseGame()
+    public void Pause()
     {
         isPaused = true;
+
+        if (peer != null)
+            peer.Pause();
     }
 
-    async Task StopGame()
+    public void Resume()
     {
+        isPaused = false;
+
+        if (peer != null)
+            peer.Resume();
+    }
+
+    public void PeerPaused()
+    {
+        isPaused = true;
+
+        peerPausedGameObject.SetActive(true);
+    }
+
+    public void PeerResumed()
+    {
+        isPaused = false;
+
+        peerPausedGameObject.SetActive(false);
+    }
+
+    public async Task Stop(CancellationToken ct)
+    {
+        if (cts == null)
+        {
+            Debug.Log("Game already stopped");
+            return;
+        }
+
         cts.Cancel();
+
         try
         {
             Debug.Log("Stopping game...");
@@ -727,12 +711,41 @@ public class Game : MonoBehaviour
         Debug.Log("Game stopped");
     }
 
-    public async void StartGame(Settings newSettings)
+    void Start(Settings newSettings)
     {
-        await StopGame();
-
         settings = newSettings;
+        
+        Debug.Log($"Using seed {settings.Seed}");
+        r = new ConsistentRandom(settings.Seed);
 
-        Start();
+        cts = new CancellationTokenSource();
+
+        isPaused = false;
+
+        gameTask = RunGame(cts.Token);
+    }
+
+    public void StartTwoPlayer(Settings newSettings, NetworkPlayer newPeer)
+    {
+        peer = newPeer;
+
+        Start(newSettings);
+    }
+
+    public void StartOnePlayer(Settings newSettings)
+    {
+        peer = null;
+
+        Start(newSettings);
+    }
+
+    public async void End(bool theyWon)
+    {
+        await Stop(CancellationToken.None);
+
+        if (theyWon)
+            loseGameObject.SetActive(true);
+        else
+            winGameObject.SetActive(true);
     }
 }

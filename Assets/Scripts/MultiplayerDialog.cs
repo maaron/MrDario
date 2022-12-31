@@ -12,7 +12,7 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 
-public class MultiplayerDialog : MonoBehaviour
+public class MultiplayerDialog : Dialog<MultiplayerMode?>
 {
     [SerializeField] TMPro.TextMeshProUGUI serverStatusText;
     [SerializeField] TMPro.TextMeshProUGUI serverAddressText;
@@ -20,44 +20,42 @@ public class MultiplayerDialog : MonoBehaviour
     [SerializeField] TMPro.TMP_InputField hostnameInput, portInput;
     [SerializeField] Button cancelButton, acceptButton;
 
-    NetworkManager nm;
-    UnityTransport tp;
+    bool hostnameValid = false;
+    bool portValid = false;
 
-    public async void RunDialog(Action<MultiplayerMode?> onComplete)
+    private void Awake()
     {
-        nm = NetworkManager.Singleton;
-        tp = nm.GetComponent<UnityTransport>();
-
-        gameObject.SetActive(true);
-
-        try
+        hostnameInput.onValueChanged.AddListener(value =>
         {
-            var result = await Run(CancellationToken.None);
-            onComplete(result);
-        }
-        finally
+            hostnameValid = !string.IsNullOrEmpty(value);
+            acceptButton.interactable = hostnameValid && portValid;
+        });
+
+        portInput.onValueChanged.AddListener(value =>
         {
-            gameObject.SetActive(false);
-        }
+            portValid = ushort.TryParse(value, out var port);
+            acceptButton.interactable = hostnameValid && portValid;
+        });
     }
 
-    public async Task<MultiplayerMode?> Run(CancellationToken ct)
+    protected override async Task<MultiplayerMode?> RunInternal(CancellationToken ct)
     {
-        var nm = NetworkManager.Singleton;
-        var tp = nm.GetComponent<UnityTransport>();
+        var settings = MultiplayerSettings.Load();
+        hostnameInput.text = settings.Hostname;
+        portInput.text = settings.Port.ToString();
 
         while (true)
         {
             ct.ThrowIfCancellationRequested();
 
-            await Shutdown()(ct);
+            await Net.Shutdown(ct);
 
             StartServer();
             
             var which = await Proc.Any(
                 acceptButton.onClick.NextEvent().Select(_ => 0),
                 cancelButton.onClick.NextEvent().Select(_ => 1),
-                NextClientConnected().Select(clientId => 2))(ct);
+                Net.NextClientConnected.Select(clientId => 2))(ct);
 
             if (which == 1)
             {
@@ -71,7 +69,11 @@ public class MultiplayerDialog : MonoBehaviour
             }
             else // which == 0
             {
-                await Shutdown()(ct);
+                settings.Hostname = hostnameInput.text;
+                settings.Port = int.Parse(portInput.text);
+                settings.Save();
+
+                await Net.Shutdown(ct);
 
                 var connected = await ConnectToServer()(ct);
 
@@ -86,6 +88,7 @@ public class MultiplayerDialog : MonoBehaviour
 
     void StartServer()
     {
+#if false
         var localAddress = System.Net.NetworkInformation.NetworkInterface
             .GetAllNetworkInterfaces()
             .Where(iface => 
@@ -94,12 +97,18 @@ public class MultiplayerDialog : MonoBehaviour
             .SelectMany(iface => iface.GetIPProperties().UnicastAddresses)
             .Where(addr => addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
             .Select(addr => $"{addr.Address}:{7777}");
+#else
+        var localAddress = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName()).AddressList.Where(ip =>
+            ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            .ToArray()
+            .Select(addr => $"{addr}:{7777}");
+#endif
 
         serverAddressText.text = string.Join("\n", localAddress);
 
-        tp.SetConnectionData(hostnameInput.text, 7777, "0.0.0.0");
-        Debug.Log($"Starting server on {tp.ConnectionData.ServerListenAddress ?? "0.0.0.0"}:{tp.ConnectionData.Port}");
-        nm.StartServer();
+        Debug.Log($"Starting server on port 7777");
+        
+        Net.StartServer(7777);
     }
 
     Proc<bool> ConnectToServer() => async ct =>
@@ -112,65 +121,23 @@ public class MultiplayerDialog : MonoBehaviour
 
         var hostname = hostnameInput.text;
 
-        await Shutdown()(ct);
-
-        tp.SetConnectionData(hostname, port);
+        await Net.Shutdown(ct);
 
         Debug.Log($"Connecting to {hostname}:{port}");
 
-        if (!nm.StartClient())
+        if (!Net.StartClient(hostname, port))
         {
             Debug.Log($"Connection failed synchronously");
             return false;
         }
 
         var result = await Proc.Any(
-            NextClientConnected().Select(clientId => true),
+            Net.NextClientConnected.Select(clientId => true),
             Proc.Delay(2).Select(_ => false))(ct);
 
         if (!result)
             Debug.Log("Connection timed out");
 
         return result;
-    };
-
-    Proc<ValueTuple> Shutdown() => async ct =>
-    {
-        Debug.Log("Shutting down network");
-        nm.Shutdown();
-
-        while (nm.ShutdownInProgress)
-        {
-            ct.ThrowIfCancellationRequested();
-            await Task.Delay(100, ct);
-        }
-
-        return default;
-    };
-
-    Proc<ulong> NextClientConnected() => async ct =>
-    {
-        var tcs = new TaskCompletionSource<ulong>();
-
-        var callback = new Action<ulong>(clientId =>
-        {
-            Debug.Log($"Client connected, clientId = {clientId}");
-
-            tcs.TrySetResult(clientId);
-        });
-
-        nm.OnClientConnectedCallback += callback;
-
-        try
-        {
-            using (ct.Register(() => tcs.TrySetCanceled()))
-            {
-                return await tcs.Task;
-            }
-        }
-        finally
-        {
-            nm.OnClientConnectedCallback -= callback;
-        }
     };
 }

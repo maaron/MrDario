@@ -26,6 +26,12 @@ public static class Proc
         return default;
     };
 
+    public static Func<T, Proc<ValueTuple>> Action<T>(Action<T> action) => t => ct =>
+    {
+        action(t);
+        return Task.FromResult(ValueTuple.Create());
+    };
+
     public static Proc<R> Select<T, R>(this Proc<T> proc, Func<T, R> f) => async ct =>
     {
         return f(await proc(ct));
@@ -110,4 +116,16 @@ public static class Proc
         var winner = await Any(procs)(ct);
         return await winner(ct);
     };
+
+    public static Proc<ValueTuple> Forever<T>(this Proc<T> proc) => async ct =>
+    {
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            await proc(ct);
+        }
+    };
+
+    public static Proc<ValueTuple> Ignore<T>(this Proc<T> proc) => proc.Select(_ => ValueTuple.Create());
 }

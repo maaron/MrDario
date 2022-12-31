@@ -34,4 +34,29 @@ public static class Generator
 
     public static Generator<T?> Nullable<T>(this Generator<T> g)
         where T : struct => r => r.Next(2) == 1 ? g(r) : null;
+
+    public static Generator<T[]> Subset<T>(int count, T[] choices) => r =>
+    {
+        if (count < 0) 
+            throw new ArgumentException("count must be non-negative");
+
+        if (count == 0) 
+            return new T[0];
+
+        if (count > choices.Length)
+            throw new ArgumentException("count must be at most the length of choices");
+
+        var remaining = Enumerable.Range(0, choices.Length).ToList();
+        var subset = new T[count];
+
+        for (int i = 0; i < count; i++)
+        {
+            var nextRemainingIdx = IntRange(0, remaining.Count)(r);
+            var nextIdx = remaining[nextRemainingIdx];
+            subset[i] = choices[nextIdx];
+            remaining.RemoveAt(nextRemainingIdx);
+        }
+
+        return subset;
+    };
 }

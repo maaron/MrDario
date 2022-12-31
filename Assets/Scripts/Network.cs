@@ -1,43 +1,115 @@
+using System;
 using System.Linq;
+using System.Threading.Tasks;
+using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 
-namespace Unity.Netcode.Samples
+public static class Net
 {
-    /// <summary>
-    /// Class to display helper buttons and status labels on the GUI, as well as buttons to start host/client/server.
-    /// Once a connection has been established to the server, the local player can be teleported to random positions via a GUI button.
-    /// </summary>
-    public class Network : MonoBehaviour
+    public static Proc<ulong> NextClientConnected => async ct =>
     {
-        [SerializeField] Game game;
+        var nm = NetworkManager.Singleton;
 
-        private void Awake()
+        var tcs = new TaskCompletionSource<ulong>();
+
+        var callback = new Action<ulong>(clientId =>
         {
-            game.DropGenerated += SendDrop;
-        }
+            Debug.Log($"Client connected, clientId = {clientId}");
 
-        public void SendDrop(Drop drop)
+            tcs.TrySetResult(clientId);
+        });
+
+        nm.OnClientConnectedCallback += callback;
+
+        try
         {
-            var networkManager = NetworkManager.Singleton;
-
-            if (networkManager.IsClient && !networkManager.IsServer)
+            using (ct.Register(() => tcs.TrySetCanceled()))
             {
-                if (networkManager.LocalClient.PlayerObject.TryGetComponent<NetworkPlayer>(out var peer))
-                {
-                    peer.AddDropServerRpc(drop);
-                }
-            }
-            else if (networkManager.IsServer)
-            {
-                var clientPair = networkManager.ConnectedClients.FirstOrDefault();
-                if (clientPair.Value != null)
-                {
-                    if (clientPair.Value.PlayerObject.TryGetComponent<NetworkPlayer>(out var peer))
-                    {
-                        peer.AddDropClientRpc(drop);
-                    }
-                }
+                return await tcs.Task;
             }
         }
+        finally
+        {
+            nm.OnClientConnectedCallback -= callback;
+        }
+    };
+
+    public static Proc<ulong> NextClientDisconnected => async ct =>
+    {
+        var nm = NetworkManager.Singleton;
+
+        var tcs = new TaskCompletionSource<ulong>();
+
+        var callback = new Action<ulong>(clientId =>
+        {
+            Debug.Log($"Client connected, clientId = {clientId}");
+
+            tcs.TrySetResult(clientId);
+        });
+
+        nm.OnClientDisconnectCallback += callback;
+
+        try
+        {
+            using (ct.Register(() => tcs.TrySetCanceled()))
+            {
+                return await tcs.Task;
+            }
+        }
+        finally
+        {
+            nm.OnClientDisconnectCallback -= callback;
+        }
+    };
+
+    public static Proc<ValueTuple> Shutdown => async ct =>
+    {
+        Debug.Log("Shutting down network");
+
+        var nm = NetworkManager.Singleton;
+
+        nm.Shutdown();
+
+        while (nm.ShutdownInProgress)
+        {
+            ct.ThrowIfCancellationRequested();
+            await Task.Delay(100, ct);
+        }
+
+        return default;
+    };
+
+    public static bool StartServer(ushort port)
+    {
+        NetworkManager.Singleton.GetComponent<UnityTransport>().SetConnectionData("0.0.0.0", port, "0.0.0.0");
+        return NetworkManager.Singleton.StartServer();
+    }
+
+    public static bool StartClient(string hostname, ushort port)
+    {
+        NetworkManager.Singleton.GetComponent<UnityTransport>().SetConnectionData(hostname, port);
+        return NetworkManager.Singleton.StartClient();
+    }
+
+    public static T SingleClient<T>()
+    {
+        var client = NetworkManager.Singleton.ConnectedClients.Values.FirstOrDefault();
+
+        if (client == null)
+            throw new Exception("No clients connected");
+
+        if (!client.PlayerObject.TryGetComponent<T>(out var peer))
+            throw new Exception($"Peer {typeof(T).Name} not available?");
+
+        return peer;
+    }
+
+    public static T LocalPlayer<T>()
+    {
+        if (!NetworkManager.Singleton.LocalClient.PlayerObject.TryGetComponent<T>(out var peer))
+            throw new Exception($"Peer {typeof(T).Name} not available?");
+
+        return peer;
     }
 }
